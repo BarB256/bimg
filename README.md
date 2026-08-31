@@ -132,12 +132,10 @@ bimg images/nixoslogo.png 50
 
 <table>
   <tr>
-    <td align="center"><strong>Original Zig Logo</strong></td>
     <td align="center"><strong>100 columns</strong></td>
     <td align="center"><strong>30 columns</strong></td>
   </tr>
   <tr>
-    <td align="center"><img src="images/ziglogo100.png" alt="Zig logo source" width="150"></td>
     <td align="center"><img src="images/ziglogo100.png" alt="Zig logo at 100 columns" width="300"></td>
     <td align="center"><img src="images/ziglogo30.png" alt="Zig logo at 30 columns" width="150"></td>
   </tr>
@@ -150,7 +148,7 @@ bimg images/ziglogo100.png 30
 
 ## How It Works
 
-1. **Query dimensions** — Uses `magick identify` to get the source image's real dimensions
+1. **Query dimensions** — Uses `imagick identify` to get the source image's real dimensions
 2. **Calculate size** — Scales the image to fit within the terminal width while preserving aspect ratio
 3. **Convert to BMP** — Converts and resizes the image to a temporary BMP file via ImageMagick
 4. **Read pixels** — Parses the BMP file, handling bottom-up row order and row padding
