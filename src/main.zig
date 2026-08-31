@@ -75,9 +75,19 @@ fn computeRenderSize(orig: Size, max_width: u32) Size {
 
 fn convertToBmp(allocator: std.mem.Allocator, input_path: []const u8, output_path: []const u8, size: Size) !void {
     const resize_arg = try std.fmt.allocPrint(allocator, "{d}x{d}!", .{ size.width, size.height });
+    const bmp_target = try std.fmt.allocPrint(allocator, "BMP3:{s}", .{output_path});
 
     var magick = std.process.Child.init(
-        &[_][]const u8{ "magick", input_path, "-resize", resize_arg, output_path },
+        &[_][]const u8{
+            "magick", input_path,
+            "-resize", resize_arg,
+            "-background", "black",
+            "-alpha", "remove",
+            "-alpha", "off",
+            "-type", "TrueColor",
+            "-depth", "8",
+            bmp_target,
+        },
         allocator,
     );
     magick.stdout_behavior = .Inherit;
@@ -112,6 +122,12 @@ fn loadBmp(allocator: std.mem.Allocator, path: []const u8, pixels: []([3]u8), si
 
     var header: [54]u8 = undefined;
     _ = try file.readAll(&header);
+
+    const bpp = std.mem.readInt(u16, header[28..30], .little);
+    if (bpp != 24) {
+        std.debug.print("error: expected 24-bit BMP, got {}-bit\n", .{bpp});
+        return error.UnsupportedBitDepth;
+    }
 
     const pixel_offset = std.mem.readInt(u32, header[10..14], .little);
 
