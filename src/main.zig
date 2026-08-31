@@ -1,12 +1,38 @@
 const std = @import("std");
 
-const Size = struct { width: u32, height: u32 };
+/// Represents image dimensions in pixels.
+const ImageSize = struct {
+    width: u32,
+    height: u32,
+};
 
+/// Command-line arguments parsed from user input.
+const CliArgs = struct {
+    image_path: []const u8,
+    max_width: u32,
+};
+
+/// Entry point for the bimg ASCII image renderer.
+/// Parses command-line arguments, queries image dimensions,
+/// converts and resizes the image, then renders it as colored ASCII art.
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
 
+    const args = try parseCliArgs(allocator);
+    const orig_size = try queryImageDimensions(allocator, args.image_path);
+    const render_size = calculateTerminalSize(orig_size, args.max_width);
+
+    try processImage(allocator, args.image_path, render_size);
+}
+
+/// Parses command-line arguments and returns structured CLI options.
+///
+/// Expected usage: `bimg <image-path> [max-width]`
+/// - image_path: Path to the input image file
+/// - max_width: Maximum terminal columns for output (default: 120)
+fn parseCliArgs(allocator: std.mem.Allocator) !CliArgs {
     var args = try std.process.argsWithAllocator(allocator);
     defer args.deinit();
 
@@ -21,20 +47,17 @@ pub fn main() !void {
     else
         120;
 
-    const orig_size = try getImageSize(allocator, image_path);
-    const render_size = computeRenderSize(orig_size, max_width);
-
-    const bmp_path = "/tmp/bimg-render.bmp";
-    try convertToBmp(allocator, image_path, bmp_path, render_size);
-
-    const pixels = try allocator.alloc([3]u8, render_size.width * render_size.height);
-    try loadBmp(allocator, bmp_path, pixels, render_size);
-
-    render(pixels, render_size);
+    return .{
+        .image_path = image_path,
+        .max_width = max_width,
+    };
 }
 
-/// Ask imagemagick for the source image's real dimensions.
-fn getImageSize(allocator: std.mem.Allocator, path: []const u8) !Size {
+/// Queries ImageMagick for the source image's real dimensions in pixels.
+///
+/// Runs `magick identify -format "%w %h"` and parses the output.
+/// Returns an error if ImageMagick fails or output format is unexpected.
+fn queryImageDimensions(allocator: std.mem.Allocator, path: []const u8) !ImageSize {
     var child = std.process.Child.init(
         &[_][]const u8{ "magick", "identify", "-format", "%w %h", path },
         allocator,
@@ -58,11 +81,12 @@ fn getImageSize(allocator: std.mem.Allocator, path: []const u8) !Size {
     };
 }
 
-/// Fit the image within max_width columns, preserving aspect ratio.
-/// Each pixel prints as 2 characters wide x 1 line tall; since terminal
+/// Calculates render dimensions that fit within the terminal width.
+///
+/// Each pixel prints as 2 characters wide x 1 line tall. Since terminal
 /// characters are roughly twice as tall as wide, that doubling already
 /// cancels out the aspect correction, so a straight proportional scale works.
-fn computeRenderSize(orig: Size, max_width: u32) Size {
+fn calculateTerminalSize(orig: ImageSize, max_width: u32) ImageSize {
     const width = @min(orig.width, max_width);
     const height_f: f64 = @as(f64, @floatFromInt(width)) *
         (@as(f64, @floatFromInt(orig.height)) / @as(f64, @floatFromInt(orig.width)));
@@ -73,7 +97,25 @@ fn computeRenderSize(orig: Size, max_width: u32) Size {
     };
 }
 
-fn convertToBmp(allocator: std.mem.Allocator, input_path: []const u8, output_path: []const u8, size: Size) !void {
+/// Converts and resizes an image to BMP format using ImageMagick.
+///
+/// Creates a temporary BMP file at `/tmp/bimg-render.bmp` with exact
+/// dimensions specified by `size`. The BMP format allows easy pixel access.
+fn processImage(allocator: std.mem.Allocator, input_path: []const u8, size: ImageSize) !void {
+    const bmp_path = "/tmp/bimg-render.bmp";
+    try convertImageToBmp(allocator, input_path, bmp_path, size);
+
+    const pixels = try allocator.alloc([3]u8, size.width * size.height);
+    try loadBmpPixels(allocator, bmp_path, pixels, size);
+
+    renderToTerminal(pixels, size);
+}
+
+/// Converts an image to BMP format with exact target dimensions using ImageMagick.
+///
+/// Uses `magick input -resize WxH! output` to force exact dimensions
+/// (the `!` flag ignores aspect ratio to match requested size exactly).
+fn convertImageToBmp(allocator: std.mem.Allocator, input_path: []const u8, output_path: []const u8, size: ImageSize) !void {
     const resize_arg = try std.fmt.allocPrint(allocator, "{d}x{d}!", .{ size.width, size.height });
 
     var magick = std.process.Child.init(
@@ -88,25 +130,11 @@ fn convertToBmp(allocator: std.mem.Allocator, input_path: []const u8, output_pat
     if (result.Exited != 0) return error.ConvertFailed;
 }
 
-fn render(pixels: []const [3]u8, size: Size) void {
-    for (0..size.height) |y| {
-        for (0..size.width) |x| {
-            const r = pixels[y * size.width + x][2];
-            const g = pixels[y * size.width + x][1];
-            const b = pixels[y * size.width + x][0];
-
-            const val = @as(f16, @floatFromInt(r)) * 0.299 +
-                @as(f16, @floatFromInt(g)) * 0.587 +
-                @as(f16, @floatFromInt(b)) * 0.114;
-
-            const char = valueToAscii(val);
-            std.debug.print("\x1b[38;2;{};{};{}m{c}{c}\x1b[0m", .{ r, g, b, char, char });
-        }
-        std.debug.print("\n", .{});
-    }
-}
-
-fn loadBmp(allocator: std.mem.Allocator, path: []const u8, pixels: []([3]u8), size: Size) !void {
+/// Reads BMP file and extracts pixel data into the provided buffer.
+///
+/// Handles BMP's bottom-up row order and row padding (rows are padded
+/// to 4-byte boundaries). Each pixel is stored as [B, G, R] (BMP order).
+fn loadBmpPixels(allocator: std.mem.Allocator, path: []const u8, pixels: []([3]u8), size: ImageSize) !void {
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
@@ -119,7 +147,7 @@ fn loadBmp(allocator: std.mem.Allocator, path: []const u8, pixels: []([3]u8), si
     const row_buf = try allocator.alloc(u8, row_stride);
 
     for (0..size.height) |y| {
-        const src_row = size.height - 1 - y; // BMP rows are bottom-up
+        const src_row = size.height - 1 - y; // BMP rows are stored bottom-up
         try file.seekTo(pixel_offset + src_row * row_stride);
         _ = try file.readAll(row_buf);
 
@@ -130,7 +158,36 @@ fn loadBmp(allocator: std.mem.Allocator, path: []const u8, pixels: []([3]u8), si
     }
 }
 
-fn valueToAscii(val: f16) u8 {
+/// Renders pixel data as colored ASCII art in the terminal.
+///
+/// Each pixel is converted to an ASCII character based on luminance,
+/// then printed with 24-bit ANSI color escape codes matching the
+/// original RGB values. Each pixel is printed twice horizontally
+/// to approximate square aspect ratio in terminal fonts.
+fn renderToTerminal(pixels: []const [3]u8, size: ImageSize) void {
+    for (0..size.height) |y| {
+        for (0..size.width) |x| {
+            const b = pixels[y * size.width + x][0];
+            const g = pixels[y * size.width + x][1];
+            const r = pixels[y * size.width + x][2];
+
+            const luminance = @as(f16, @floatFromInt(r)) * 0.299 +
+                @as(f16, @floatFromInt(g)) * 0.587 +
+                @as(f16, @floatFromInt(b)) * 0.114;
+
+            const char = luminanceToAsciiChar(luminance);
+            std.debug.print("\x1b[38;2;{};{};{}m{c}{c}\x1b[0m", .{ r, g, b, char, char });
+        }
+        std.debug.print("\n", .{});
+    }
+}
+
+/// Maps a luminance value (0-255) to an ASCII character for display.
+///
+/// Uses the standard ramp " .:-=+*#%@" where darker values map to
+/// spaces and brighter values map to denser characters. This creates
+/// a visual representation of brightness levels.
+fn luminanceToAsciiChar(val: f16) u8 {
     const chars = " .:-=+*#%@";
     const index: usize = @intFromFloat(val / 255.0 * (chars.len - 1));
     return chars[index];
