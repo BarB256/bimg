@@ -1,5 +1,5 @@
 {
-  description = "bimg  CLI ASCII image viewer";
+  description = "bimg CLI ASCII image viewer";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -29,6 +29,12 @@
           export ZIG_GLOBAL_CACHE_DIR=$TMPDIR/zig-cache
           zig build -Doptimize=ReleaseFast --prefix $out
         '';
+      
+        meta = {
+          mainProgram = "bimg";
+          description = "CLI ASCII image viewer";
+          platforms = [ "x86_64-linux" ];
+        };
       };
 
       apps.${system}.default = {
