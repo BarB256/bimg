@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const Size = struct { width: u32, height: u32 };
+
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -14,7 +16,6 @@ pub fn main() !void {
         return error.MissingArgument;
     };
 
-    // optional second arg overrides the default max render width
     const max_width: u32 = if (args.next()) |w|
         try std.fmt.parseInt(u32, w, 10)
     else
@@ -32,8 +33,6 @@ pub fn main() !void {
     render(pixels, render_size);
 }
 
-const Size = struct { width: u32, height: u32 };
-
 /// Ask imagemagick for the source image's real dimensions.
 fn getImageSize(allocator: std.mem.Allocator, path: []const u8) !Size {
     var child = std.process.Child.init(
@@ -41,6 +40,7 @@ fn getImageSize(allocator: std.mem.Allocator, path: []const u8) !Size {
         allocator,
     );
     child.stdout_behavior = .Pipe;
+    child.stderr_behavior = .Inherit;
 
     try child.spawn();
     const stdout = child.stdout.?;
@@ -59,10 +59,9 @@ fn getImageSize(allocator: std.mem.Allocator, path: []const u8) !Size {
 }
 
 /// Fit the image within max_width columns, preserving aspect ratio.
-/// Since each "pixel" is printed as 2 chars wide x 1 line tall, and terminal
-/// characters are roughly twice as tall as wide, the doubled width already
-/// cancels out the character aspect ratio — so a straight proportional
-/// scale (no extra correction factor) renders close to correct.
+/// Each pixel prints as 2 characters wide x 1 line tall; since terminal
+/// characters are roughly twice as tall as wide, that doubling already
+/// cancels out the aspect correction, so a straight proportional scale works.
 fn computeRenderSize(orig: Size, max_width: u32) Size {
     const width = @min(orig.width, max_width);
     const height_f: f64 = @as(f64, @floatFromInt(width)) *
@@ -116,7 +115,6 @@ fn loadBmp(allocator: std.mem.Allocator, path: []const u8, pixels: []([3]u8), si
 
     const pixel_offset = std.mem.readInt(u32, header[10..14], .little);
 
-    // row size must be known at runtime now since width varies
     const row_stride = (size.width * 3 + 3) / 4 * 4;
     const row_buf = try allocator.alloc(u8, row_stride);
 
