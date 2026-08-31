@@ -2,9 +2,20 @@
 
 A CLI tool that renders images as colored ASCII art in the terminal using [ImageMagick](https://imagemagick.org/).
 
-<p align="center">
-  <img src="images/nixoslogo.png" alt="NixOS Logo" width="200">
-</p>
+> **Note:** bimg is designed for headless environments — remote servers, SSH sessions, or any system without a GUI. Quickly view images without transferring them to a machine with a display.
+
+## Before & After
+
+<table>
+  <tr>
+    <td align="center"><strong>Original Image</strong></td>
+    <td align="center"><strong>bimg Output (50 cols)</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="images/nixoslogo.png" alt="Original NixOS Logo" width="250"></td>
+    <td align="center"><img src="images/nixoslogo50.png" alt="NixOS logo rendered at 50 columns" width="400"></td>
+  </tr>
+</table>
 
 ## Features
 
@@ -22,7 +33,7 @@ A CLI tool that renders images as colored ASCII art in the terminal using [Image
 - [ImageMagick](https://imagemagick.org/) (with `magick` command available)
 
 ```bash
-git clone https://github.com/yourusername/bimg.git
+git clone https://github.com/BarB256/bimg.git
 cd bimg
 zig build -Doptimize=ReleaseFast
 ./zig-out/bin/bimg <image-path>
@@ -38,7 +49,7 @@ If you have a flake-enabled NixOS configuration, add bimg as an input:
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    bimg.url = "github:yourusername/bimg";
+    bimg.url = "github:BarB256/bimg";
     bimg.inputs.nixpkgs.follows = "nixpkgs";
   };
 
@@ -71,7 +82,7 @@ Less common now, but if your system isn't flake-enabled yet, you can still pull 
 ```nix
 { config, pkgs, ... }:
 let
-  bimgFlake = builtins.getFlake "github:yourusername/bimg";
+  bimgFlake = builtins.getFlake "github:BarB256/bimg";
 in
 {
   environment.systemPackages = [
@@ -117,29 +128,25 @@ Render at 50 columns wide:
 bimg images/nixoslogo.png 50
 ```
 
-### Output
+### Zig Logo at Different Sizes
 
-The tool outputs each pixel as two colored ASCII characters, preserving the original colors:
+<table>
+  <tr>
+    <td align="center"><strong>Original Zig Logo</strong></td>
+    <td align="center"><strong>100 columns</strong></td>
+    <td align="center"><strong>30 columns</strong></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="images/ziglogo100.png" alt="Zig logo source" width="150"></td>
+    <td align="center"><img src="images/ziglogo100.png" alt="Zig logo at 100 columns" width="300"></td>
+    <td align="center"><img src="images/ziglogo30.png" alt="Zig logo at 30 columns" width="150"></td>
+  </tr>
+</table>
 
-<p align="center">
-  <img src="images/nixoslogo50.png" alt="NixOS logo rendered at 50 columns" width="400">
-</p>
-
-### Zig Logo Examples
-
-Different sizes of the Zig logo:
-
-<p align="center">
-  <img src="images/ziglogo100.png" alt="Zig logo at 100 columns" width="400">
-  <br>
-  <em>Zig logo rendered at 100 columns</em>
-</p>
-
-<p align="center">
-  <img src="images/ziglogo30.png" alt="Zig logo at 30 columns" width="200">
-  <br>
-  <em>Zig logo rendered at 30 columns</em>
-</p>
+```bash
+bimg images/ziglogo100.png 100
+bimg images/ziglogo100.png 30
+```
 
 ## How It Works
 
