@@ -20,7 +20,7 @@
         version = "0.1.0";
         src = ./.;
 
-        nativeBuildInputs = [ zig ];
+        nativeBuildInputs = [ zig pkgs.makeWrapper ];
         buildInputs = [ pkgs.imagemagick ];
 
         dontInstall = true;
@@ -29,7 +29,12 @@
           export ZIG_GLOBAL_CACHE_DIR=$TMPDIR/zig-cache
           zig build -Doptimize=ReleaseFast --prefix $out
         '';
-      
+
+        postFixup = ''
+          wrapProgram $out/bin/bimg \
+            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.imagemagick ]}
+        '';
+
         meta = {
           mainProgram = "bimg";
           description = "CLI ASCII image viewer";
